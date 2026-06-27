@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-confluence-sync",
-	"version": "0.1.0",
+	"version": "0.1.2",
 	"description": "Read-only sync of Confluence Cloud and Data Center pages into Obsidian vault as Markdown.",
 	"main": "main.js",
 	"scripts": {

@@ -1,28 +1,59 @@
 import TurndownService from "turndown";
+import { sanitizeFilename } from "../utils/pathUtils";
 
 type TNode = TurndownService.Node;
 
 // Convert Confluence Storage Format HTML to Markdown.
 // Handles ac:/ri: namespace prefixes, code macros, links, images, callouts, TOC, unknown macros.
-export function confluenceToMarkdown(storageFormat: string, baseUrl: string): string {
+export function confluenceToMarkdown(
+	storageFormat: string,
+	baseUrl: string,
+	attachmentFolder?: string,
+): string {
 	// Replace namespace colons with dashes so DOMParser can handle them
 	const sanitized = storageFormat
 		.replace(/<(\/?)ac:/g, "<$1ac-")
-		.replace(/<(\/?)ri:/g, "<$1ri-");
+		.replace(/<(\/?)ri:/g, "<$1ri-")
+		.replace(/\b(ac|ri):([A-Za-z0-9_-]+)=/g, "$1-$2=");
 
-	const turndown = createTurndownService(baseUrl);
-	const markdown = turndown.turndown(sanitized);
+	const withCodeMacros = replaceCodeMacros(sanitized);
+	const withAttachmentMacros = replaceAttachmentMacros(withCodeMacros, attachmentFolder);
+	const turndown = createTurndownService(baseUrl, attachmentFolder);
+	const markdown = turndown.turndown(withAttachmentMacros);
 
 	// Clean up excessive blank lines
 	return markdown.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function createTurndownService(baseUrl: string): TurndownService {
+function createTurndownService(baseUrl: string, attachmentFolder?: string): TurndownService {
 	const td = new TurndownService({
 		headingStyle: "atx",
 		codeBlockStyle: "fenced",
 		bulletListMarker: "-",
 		emDelimiter: "*",
+	});
+
+	// --- Preprocessed attachment macro placeholders ---
+	td.addRule("confluenceAttachmentPlaceholder", {
+		filter(node: TNode): boolean {
+			return (node as HTMLElement).hasAttribute?.("data-confluence-attachment") || false;
+		},
+		replacement(_content: string, node: TNode): string {
+			const value = (node as HTMLElement).getAttribute("data-confluence-attachment") || "";
+			return `\n${decodeURIComponent(value)}\n`;
+		},
+	});
+
+	// --- Preprocessed code macro placeholders ---
+	td.addRule("confluenceCodePlaceholder", {
+		filter(node: TNode): boolean {
+			return (node as HTMLElement).hasAttribute?.("data-confluence-code") || false;
+		},
+		replacement(_content: string, node: TNode): string {
+			const value = (node as HTMLElement).getAttribute("data-confluence-code") || "";
+			const language = (node as HTMLElement).getAttribute("data-confluence-language") || "";
+			return `\n\`\`\`${decodeURIComponent(language)}\n${decodeURIComponent(value)}\n\`\`\`\n`;
+		},
 	});
 
 	// --- Code macro -> fenced code block ---
@@ -112,7 +143,7 @@ function createTurndownService(baseUrl: string): TurndownService {
 
 			if (attachmentRef) {
 				const filename = attachmentRef.getAttribute("ri-filename") || "";
-				return `[[${filename}]]`;
+				return formatAttachmentWikilink(filename, attachmentFolder, false);
 			}
 
 			// URL link
@@ -143,7 +174,7 @@ function createTurndownService(baseUrl: string): TurndownService {
 
 			if (attachmentRef) {
 				const filename = attachmentRef.getAttribute("ri-filename") || "";
-				return `![[${filename}]]`;
+				return formatAttachmentWikilink(filename, attachmentFolder, true);
 			}
 
 			return `![${alt}]()`;
@@ -201,6 +232,25 @@ function createTurndownService(baseUrl: string): TurndownService {
 		},
 	});
 
+	// --- Attachment preview/file macros -> attachment embed or link ---
+	td.addRule("confluenceAttachmentMacro", {
+		filter(node: TNode): boolean {
+			return isTag(node, "ac-structured-macro") &&
+				(node as HTMLElement).querySelector("ri-attachment") !== null;
+		},
+		replacement(_content: string, node: TNode): string {
+			const el = node as HTMLElement;
+			const macroName = el.getAttribute("ac-name") || "";
+			const embed = shouldEmbedAttachmentMacro(macroName);
+			const links = Array.from(el.querySelectorAll("ri-attachment"))
+				.map((attachmentRef) => attachmentRef.getAttribute("ri-filename") || "")
+				.filter((filename) => filename.length > 0)
+				.map((filename) => formatAttachmentWikilink(filename, attachmentFolder, embed));
+
+			return links.length > 0 ? `\n${links.join("\n")}\n` : "";
+		},
+	});
+
 	// --- Catch-all: unknown ac-structured-macro -> HTML comment ---
 	td.addRule("confluenceUnknownMacro", {
 		filter(node: TNode): boolean {
@@ -249,4 +299,114 @@ function isTag(node: TNode, tagName: string): boolean {
 function getParamValue(el: HTMLElement, paramName: string): string | null {
 	const param = el.querySelector(`ac-parameter[ac-name="${paramName}"]`);
 	return param?.textContent || null;
+}
+
+function formatAttachmentWikilink(
+	filename: string,
+	attachmentFolder: string | undefined,
+	embed: boolean,
+): string {
+	const safeFilename = sanitizeFilename(filename);
+	const target = attachmentFolder
+		? `${attachmentFolder}/${safeFilename}`
+		: safeFilename;
+	return `${embed ? "!" : ""}[[${target}]]`;
+}
+
+function shouldEmbedAttachmentMacro(macroName: string): boolean {
+	const previewMacros = new Set([
+		"view-file",
+		"viewdoc",
+		"viewpdf",
+		"viewppt",
+		"viewxls",
+		"office-word",
+		"office-excel",
+		"office-powerpoint",
+		"multimedia",
+	]);
+	return previewMacros.has(macroName);
+}
+
+function replaceCodeMacros(html: string): string {
+	return html.replace(
+		/<ac-structured-macro\b[^>]*\bac-name=(['"])code\1[^>]*>[\s\S]*?<\/ac-structured-macro>/g,
+		(macro) => {
+			const language = getMacroParameter(macro, "language") || "";
+			const code = extractPlainTextBody(macro) || extractPreText(macro) || "";
+			return `<pre data-confluence-code="${encodeURIComponent(code)}" data-confluence-language="${encodeURIComponent(language)}">code</pre>`;
+		},
+	);
+}
+
+function replaceAttachmentMacros(html: string, attachmentFolder?: string): string {
+	return html.replace(
+		/<ac-structured-macro\b[^>]*>[\s\S]*?<\/ac-structured-macro>/g,
+		(macro) => {
+			if (!macro.includes("<ri-attachment")) {
+				return macro;
+			}
+
+			const macroName = getHtmlAttribute(macro, "ac-name") || "";
+			const embed = shouldEmbedAttachmentMacro(macroName);
+			const links = Array.from(macro.matchAll(/<ri-attachment\b[^>]*>/g))
+				.map((match) => getHtmlAttribute(match[0], "ri-filename") || "")
+				.filter((filename) => filename.length > 0)
+				.map((filename) => formatAttachmentWikilink(filename, attachmentFolder, embed));
+
+			return links.length > 0
+				? `<p data-confluence-attachment="${encodeURIComponent(links.join("\n"))}">attachment</p>`
+				: macro;
+		},
+	);
+}
+
+function getMacroParameter(macro: string, parameterName: string): string | null {
+	const escapedName = parameterName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const match = macro.match(new RegExp(
+		`<ac-parameter\\b[^>]*\\bac-name=(['"])${escapedName}\\1[^>]*>([\\s\\S]*?)<\\/ac-parameter>`,
+		"i",
+	));
+	return match ? decodeBasicHtmlEntities(stripTags(match[2]).trim()) : null;
+}
+
+function extractPlainTextBody(macro: string): string | null {
+	const match = macro.match(/<ac-plain-text-body\b[^>]*>([\s\S]*?)<\/ac-plain-text-body>/i);
+	if (!match) {
+		return null;
+	}
+	return decodeCdata(decodeBasicHtmlEntities(match[1]));
+}
+
+function extractPreText(macro: string): string | null {
+	const match = macro.match(/<pre\b[^>]*>([\s\S]*?)<\/pre>/i);
+	if (!match) {
+		return null;
+	}
+	return decodeBasicHtmlEntities(stripTags(match[1]));
+}
+
+function getHtmlAttribute(html: string, attributeName: string): string | null {
+	const escapedName = attributeName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const match = html.match(new RegExp(`\\b${escapedName}\\s*=\\s*(['"])(.*?)\\1`, "i"));
+	return match ? decodeBasicHtmlEntities(match[2]) : null;
+}
+
+function stripTags(value: string): string {
+	return value.replace(/<[^>]+>/g, "");
+}
+
+function decodeCdata(value: string): string {
+	return value
+		.replace(/^<!\[CDATA\[/, "")
+		.replace(/\]\]>$/, "");
+}
+
+function decodeBasicHtmlEntities(value: string): string {
+	return value
+		.replace(/&quot;/g, "\"")
+		.replace(/&#39;/g, "'")
+		.replace(/&amp;/g, "&")
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">");
 }

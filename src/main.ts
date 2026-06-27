@@ -16,6 +16,10 @@ export default class ConfluenceSyncPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+		console.info("Confluence Reader plugin loaded", {
+			version: this.manifest.version,
+			attachmentResolver: "api+storage-ref+storage-url",
+		});
 
 		// SSL bypass for self-signed certs
 		if (this.settings.skipSsl) {
@@ -66,6 +70,19 @@ export default class ConfluenceSyncPlugin extends Plugin {
 		});
 
 		this.addCommand({
+			id: "debug-current-attachments",
+			name: "Debug current file attachments",
+			callback: () => {
+				const file = this.app.workspace.getActiveFile();
+				if (!file) {
+					new Notice("Open a synced Confluence note first.");
+					return;
+				}
+				void this.debugCurrentAttachments(file);
+			},
+		});
+
+		this.addCommand({
 			id: "re-pull-all",
 			name: "Re-pull all synced files",
 			callback: () => { void this.rePullAll(); },
@@ -107,8 +124,13 @@ export default class ConfluenceSyncPlugin extends Plugin {
 	private async rePullCurrentFile(file: TFile): Promise<void> {
 		try {
 			new Notice("Re-pulling...");
-			const status = await this.pullEngine.rePullFile(file);
-			switch (status) {
+			const result = await this.pullEngine.rePullFile(file);
+			if (result === "not-synced") {
+				new Notice("This file is not synced.");
+				return;
+			}
+
+			switch (result.status) {
 				case "updated":
 					new Notice("File updated.");
 					this.statusBar.setLastPullTime(new Date());
@@ -116,9 +138,13 @@ export default class ConfluenceSyncPlugin extends Plugin {
 				case "skipped":
 					new Notice("File is already up to date.");
 					break;
-				case "not-synced":
-					new Notice("This file is not synced.");
-					break;
+			}
+
+			if (result.attachments.folder) {
+				new Notice(
+					`Attachments: found ${result.attachments.found}, downloaded ${result.attachments.downloaded} in ${result.attachments.folder}`,
+					10000,
+				);
 			}
 		} catch (e: unknown) {
 			const msg = e instanceof Error ? e.message : String(e);
@@ -136,6 +162,7 @@ export default class ConfluenceSyncPlugin extends Plugin {
 				`Re-pull complete.`,
 				result.updated > 0 ? `Updated: ${result.updated}` : null,
 				result.skipped > 0 ? `Up to date: ${result.skipped}` : null,
+				result.attachments > 0 ? `Attachments: ${result.attachments}` : null,
 				result.errors.length > 0 ? `Errors: ${result.errors.length}` : null,
 			]
 				.filter(Boolean)
@@ -150,6 +177,56 @@ export default class ConfluenceSyncPlugin extends Plugin {
 			const msg = e instanceof Error ? e.message : String(e);
 			new Notice(`Re-pull failed: ${msg}`);
 		}
+	}
+
+	private async debugCurrentAttachments(file: TFile): Promise<void> {
+		try {
+			new Notice("Checking attachment debug info...");
+			const info = await this.pullEngine.debugAttachmentsForFile(file);
+			if (info === "not-synced") {
+				new Notice("This file is not synced.");
+				return;
+			}
+
+			console.log("Confluence attachment debug:", info);
+			await this.writeAttachmentDebugFile(file, info);
+			new Notice(
+				[
+					`Attachment debug:`,
+					`enabled=${info.pullAttachmentsEnabled}`,
+					`api=${info.apiAttachments.length}`,
+					`storageRefs=${info.storageFilenames.length}`,
+					`storageUrls=${info.storageUrls.length}`,
+					`candidates=${info.candidates.length}`,
+					`folder=${info.targetFolder}`,
+				].join(" "),
+				15000,
+			);
+		} catch (e: unknown) {
+			const msg = e instanceof Error ? e.message : String(e);
+			new Notice(`Attachment debug failed: ${msg}`);
+		}
+	}
+
+	private async writeAttachmentDebugFile(file: TFile, info: unknown): Promise<void> {
+		const parentPath = file.parent?.path || "";
+		const debugPath = parentPath
+			? `${parentPath}/_attachment-debug.md`
+			: "_attachment-debug.md";
+		const content = [
+			"# Confluence Attachment Debug",
+			"",
+			"```json",
+			JSON.stringify(info, null, 2),
+			"```",
+			"",
+		].join("\n");
+		const existing = this.app.vault.getAbstractFileByPath(debugPath);
+		if (existing instanceof TFile) {
+			await this.app.vault.modify(existing, content);
+			return;
+		}
+		await this.app.vault.create(debugPath, content);
 	}
 
 	private async browseSpaces(): Promise<void> {

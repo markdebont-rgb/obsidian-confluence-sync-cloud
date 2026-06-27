@@ -134,5 +134,32 @@ export interface PullResult {
 	created: number;
 	updated: number;
 	skipped: number;
+	attachments: number;
 	errors: string[];
+}
+
+export interface AttachmentPullSummary {
+	found: number;
+	downloaded: number;
+	folder?: string;
+}
+
+export interface PagePullResult {
+	status: "created" | "updated" | "skipped";
+	attachments: AttachmentPullSummary;
+}
+
+export interface AttachmentDebugInfo {
+	pullAttachmentsEnabled: boolean;
+	pageId: string;
+	pageTitle: string;
+	targetFolder: string;
+	apiAttachments: string[];
+	storageFilenames: string[];
+	storageUrls: string[];
+	candidates: {
+		title: string;
+		downloadPath: string;
+		source: string;
+	}[];
 }

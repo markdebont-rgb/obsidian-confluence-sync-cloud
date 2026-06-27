@@ -87,6 +87,7 @@ export class PullModal extends Modal {
 					result.created > 0 ? `Created: ${result.created}` : null,
 					result.updated > 0 ? `Updated: ${result.updated}` : null,
 					result.skipped > 0 ? `Up to date: ${result.skipped}` : null,
+					result.attachments > 0 ? `Attachments: ${result.attachments}` : null,
 					result.errors.length > 0 ? `Errors: ${result.errors.length}` : null,
 				]
 					.filter(Boolean)
@@ -97,8 +98,8 @@ export class PullModal extends Modal {
 					console.error("Confluence pull errors:", result.errors);
 				}
 			} else {
-				const status = await this.pullEngine.pullPage(pageId);
-				switch (status) {
+				const result = await this.pullEngine.pullPage(pageId);
+				switch (result.status) {
 					case "created":
 						new Notice("Page pulled successfully!");
 						break;
@@ -108,6 +109,12 @@ export class PullModal extends Modal {
 					case "skipped":
 						new Notice("Page is already up to date.");
 						break;
+				}
+				if (result.attachments.folder) {
+					new Notice(
+						`Attachments: found ${result.attachments.found}, downloaded ${result.attachments.downloaded} in ${result.attachments.folder}`,
+						10000,
+					);
 				}
 			}
 		} catch (e: unknown) {

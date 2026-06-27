@@ -118,9 +118,7 @@ export class ConfluenceClient {
 	}
 
 	async downloadAttachment(downloadPath: string): Promise<ArrayBuffer> {
-		const url = downloadPath.startsWith("http")
-			? downloadPath
-			: this.attachmentBase + downloadPath;
+		const url = this.resolveDownloadUrl(downloadPath);
 		const resp = await requestUrl({
 			url,
 			method: "GET",
@@ -135,11 +133,27 @@ export class ConfluenceClient {
 		return `${this.webBase}/pages/viewpage.action?pageId=${pageId}`;
 	}
 
-	private get attachmentBase(): string {
+	getAttachmentDownloadPath(pageId: string, filename: string): string {
+		const path = `/download/attachments/${encodeURIComponent(pageId)}/${encodeURIComponent(filename)}`;
 		if (this.settings.deploymentType === "cloud") {
-			return this.siteBase;
+			return `${path}?api=v2`;
 		}
-		return this.dataCenterBase;
+		return path;
+	}
+
+	private resolveDownloadUrl(downloadPath: string): string {
+		if (downloadPath.startsWith("http")) {
+			return downloadPath;
+		}
+
+		if (this.settings.deploymentType === "cloud") {
+			if (downloadPath.startsWith("/wiki/")) {
+				return this.siteBase + downloadPath;
+			}
+			return this.webBase + downloadPath;
+		}
+
+		return this.dataCenterBase + downloadPath;
 	}
 }
 
