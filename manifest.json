@@ -3,7 +3,7 @@
 	"name": "Confluence Reader",
 	"version": "0.1.0",
 	"minAppVersion": "1.5.0",
-	"description": "Read-only sync of Confluence Server pages into your vault as Markdown.",
+	"description": "Read-only sync of Confluence Cloud and Data Center pages into your vault as Markdown.",
 	"author": "KeonyRus",
 	"authorUrl": "https://github.com/KeonyRus",
 	"fundingUrl": "",

@@ -1,5 +1,7 @@
 export interface ConfluenceSyncSettings {
+	deploymentType: "data-center" | "cloud";
 	baseUrl: string;
+	cloudEmail: string;
 	pat: string;
 	skipSsl: boolean;
 	defaultSpaceKey: string;
@@ -8,7 +10,9 @@ export interface ConfluenceSyncSettings {
 }
 
 export const DEFAULT_SETTINGS: ConfluenceSyncSettings = {
+	deploymentType: "data-center",
 	baseUrl: "",
+	cloudEmail: "",
 	pat: "",
 	skipSsl: false,
 	defaultSpaceKey: "",
@@ -34,6 +38,10 @@ export interface ConfluencePage {
 		};
 	};
 	ancestors?: ConfluencePageRef[];
+	space?: {
+		key: string;
+		name?: string;
+	};
 	metadata?: {
 		labels?: {
 			results: { name: string }[];

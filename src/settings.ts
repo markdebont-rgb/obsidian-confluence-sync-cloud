@@ -14,11 +14,30 @@ export class ConfluenceSyncSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		new Setting(containerEl)
+			.setName("Confluence deployment")
+			.setDesc("Choose Data Center/Server or Cloud")
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption("data-center", "Data Center / Server")
+					.addOption("cloud", "Cloud")
+					.setValue(this.plugin.settings.deploymentType)
+					.onChange((value) => {
+						this.plugin.settings.deploymentType = value as "data-center" | "cloud";
+						void this.plugin.saveSettings();
+						this.display();
+					}),
+			);
+
+		new Setting(containerEl)
 			.setName("Confluence base URL")
-			.setDesc("Base URL of your Confluence instance (e.g., https://confluence.example.com)")
+			.setDesc("Base URL of your Confluence instance (e.g., https://confluence.example.com or https://example.atlassian.net)")
 			.addText((text) =>
 				text
-					.setPlaceholder("https://confluence.example.com")
+					.setPlaceholder(
+						this.plugin.settings.deploymentType === "cloud"
+							? "https://example.atlassian.net"
+							: "https://confluence.example.com",
+					)
 					.setValue(this.plugin.settings.baseUrl)
 					.onChange((value) => {
 						this.plugin.settings.baseUrl = value.replace(/\/+$/, "");
@@ -26,9 +45,28 @@ export class ConfluenceSyncSettingTab extends PluginSettingTab {
 					}),
 			);
 
+		if (this.plugin.settings.deploymentType === "cloud") {
+			new Setting(containerEl)
+				.setName("Atlassian account email")
+				.setDesc("Email address for Confluence Cloud API token authentication")
+				.addText((text) =>
+					text
+						.setPlaceholder("you@example.com")
+						.setValue(this.plugin.settings.cloudEmail)
+						.onChange((value) => {
+							this.plugin.settings.cloudEmail = value.trim();
+							void this.plugin.saveSettings();
+						}),
+				);
+		}
+
 		new Setting(containerEl)
-			.setName("Personal access token")
-			.setDesc("Confluence personal access token for authentication")
+			.setName(this.plugin.settings.deploymentType === "cloud" ? "API token" : "Personal access token")
+			.setDesc(
+				this.plugin.settings.deploymentType === "cloud"
+					? "Confluence Cloud API token from your Atlassian account"
+					: "Confluence Data Center / Server personal access token for authentication",
+			)
 			.addText((text) => {
 				text.inputEl.type = "password";
 				text

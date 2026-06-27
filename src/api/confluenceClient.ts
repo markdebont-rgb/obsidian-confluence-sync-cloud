@@ -13,7 +13,37 @@ export class ConfluenceClient {
 	}
 
 	private get apiBase(): string {
-		return this.settings.baseUrl.replace(/\/+$/, "") + "/rest/api";
+		if (this.settings.deploymentType === "cloud") {
+			return this.siteBase + "/wiki/rest/api";
+		}
+		return this.dataCenterBase + "/rest/api";
+	}
+
+	private get dataCenterBase(): string {
+		return this.settings.baseUrl.replace(/\/+$/, "");
+	}
+
+	private get siteBase(): string {
+		return this.settings.baseUrl.replace(/\/wiki\/?$/, "").replace(/\/+$/, "");
+	}
+
+	private get webBase(): string {
+		if (this.settings.deploymentType === "cloud") {
+			return this.siteBase + "/wiki";
+		}
+		return this.dataCenterBase;
+	}
+
+	private get authHeaders(): Record<string, string> {
+		if (this.settings.deploymentType === "cloud") {
+			return {
+				"Authorization": `Basic ${encodeBasicAuth(this.settings.cloudEmail, this.settings.pat)}`,
+			};
+		}
+
+		return {
+			"Authorization": `Bearer ${this.settings.pat}`,
+		};
 	}
 
 	private async request(path: string, params?: Record<string, string>): Promise<RequestUrlResponse> {
@@ -28,7 +58,7 @@ export class ConfluenceClient {
 			url: url.toString(),
 			method: "GET",
 			headers: {
-				"Authorization": `Bearer ${this.settings.pat}`,
+				...this.authHeaders,
 				"Accept": "application/json",
 			},
 		};
@@ -51,7 +81,7 @@ export class ConfluenceClient {
 
 	async getPage(id: string): Promise<ConfluencePage> {
 		const resp = await this.request(`/content/${id}`, {
-			expand: "body.storage,version,metadata.labels,ancestors",
+			expand: "body.storage,version,metadata.labels,ancestors,space",
 		});
 		return resp.json as ConfluencePage;
 	}
@@ -88,18 +118,39 @@ export class ConfluenceClient {
 	}
 
 	async downloadAttachment(downloadPath: string): Promise<ArrayBuffer> {
-		const url = this.settings.baseUrl.replace(/\/+$/, "") + downloadPath;
+		const url = downloadPath.startsWith("http")
+			? downloadPath
+			: this.attachmentBase + downloadPath;
 		const resp = await requestUrl({
 			url,
 			method: "GET",
 			headers: {
-				"Authorization": `Bearer ${this.settings.pat}`,
+				...this.authHeaders,
 			},
 		});
 		return resp.arrayBuffer;
+	}
+
+	getPageUrl(pageId: string): string {
+		return `${this.webBase}/pages/viewpage.action?pageId=${pageId}`;
+	}
+
+	private get attachmentBase(): string {
+		if (this.settings.deploymentType === "cloud") {
+			return this.siteBase;
+		}
+		return this.dataCenterBase;
 	}
 }
 
 function escapeCql(value: string): string {
 	return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function encodeBasicAuth(email: string, apiToken: string): string {
+	const value = `${email}:${apiToken}`;
+	if (typeof Buffer !== "undefined") {
+		return Buffer.from(value, "utf8").toString("base64");
+	}
+	return btoa(unescape(encodeURIComponent(value)));
 }

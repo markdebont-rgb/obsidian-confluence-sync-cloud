@@ -1,6 +1,6 @@
 # Obsidian Confluence Reader
 
-Read-only sync of **Confluence Server** pages into your Obsidian vault as Markdown.
+Read-only sync of **Confluence Cloud** or **Confluence Data Center / Server** pages into your Obsidian vault as Markdown.
 
 ## Features
 
@@ -23,10 +23,17 @@ Read-only sync of **Confluence Server** pages into your Obsidian vault as Markdo
 
 1. Install the plugin (BRAT or manual)
 2. Go to **Settings → Confluence Reader**
-3. Enter your Confluence Base URL (e.g., `https://confluence.example.com`)
-4. Enter your Personal Access Token (PAT)
-5. Click **Test Connection**
-6. Set the sync folder (default: `confluence-pages`)
+3. Choose your Confluence deployment type:
+   - **Cloud** for `https://example.atlassian.net`
+   - **Data Center / Server** for self-hosted Confluence
+4. Enter your Confluence Base URL:
+   - Cloud: `https://example.atlassian.net` or `https://example.atlassian.net/wiki`
+   - Data Center / Server: `https://confluence.example.com`
+5. Configure authentication:
+   - Cloud: enter your Atlassian account email and API token
+   - Data Center / Server: enter your Personal Access Token (PAT)
+6. Click **Test Connection**
+7. Set the sync folder (default: `confluence-pages`)
 
 ### SSL
 
@@ -85,8 +92,9 @@ npm run typecheck # TypeScript check
 
 ## Compatibility
 
-- Confluence **Server / Data Center** (REST API v1)
-- Authentication: Personal Access Token (Bearer)
+- Confluence **Cloud** and **Server / Data Center** (REST API v1)
+- Cloud authentication: Atlassian account email + API token (Basic auth)
+- Data Center / Server authentication: Personal Access Token (Bearer)
 - Obsidian **1.5.0+**, desktop only
 
 ## License

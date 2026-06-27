@@ -244,17 +244,14 @@ export class PullEngine {
 	}
 
 	private buildFrontmatter(page: ConfluencePage): Record<string, string | number> {
-		const baseUrl = this.settings.baseUrl.replace(/\/+$/, "");
-		const spaceKey = page.ancestors && page.ancestors.length > 0
-			? "" // will be filled from ancestors if available
-			: this.settings.defaultSpaceKey;
+		const spaceKey = page.space?.key || this.settings.defaultSpaceKey;
 
 		return {
 			"confluence-id": page.id,
-			"confluence-space": spaceKey || this.settings.defaultSpaceKey,
+			"confluence-space": spaceKey,
 			"confluence-version": page.version.number,
 			"confluence-title": page.title,
-			"confluence-url": `${baseUrl}/pages/viewpage.action?pageId=${page.id}`,
+			"confluence-url": this.client.getPageUrl(page.id),
 			"confluence-last-pull": new Date().toISOString(),
 			"confluence-author": page.version.by?.displayName || "",
 		};
