@@ -8,7 +8,7 @@ import { buildFilePath, buildAttachmentFolder, sanitizeFilename } from "../utils
 import { parseFrontmatter, buildFileContent, updateConfluenceFrontmatter } from "../utils/frontmatter";
 import { findFileByConfluenceId, readConfluenceState, findSyncedFiles } from "./syncState";
 
-const CONVERTER_VERSION = 2;
+const CONVERTER_VERSION = 4;
 
 interface AttachmentCandidate {
 	title: string;
@@ -345,7 +345,7 @@ export class PullEngine {
 			const candidates = await this.getAttachmentCandidates(page);
 			const missingLinks = candidates
 				.map((candidate) => this.formatAttachmentEmbed(candidate.title, attachmentFolder))
-				.filter((link) => !markdown.includes(link));
+				.filter((link) => !this.markdownHasAttachment(markdown, link));
 
 			if (missingLinks.length > 0) {
 				markdown = [
@@ -363,6 +363,11 @@ export class PullEngine {
 
 	private formatAttachmentEmbed(filename: string, attachmentFolder: string): string {
 		return `![[${attachmentFolder}/${sanitizeFilename(filename)}]]`;
+	}
+
+	private markdownHasAttachment(markdown: string, embedLink: string): boolean {
+		const normalLink = embedLink.startsWith("!") ? embedLink.slice(1) : embedLink;
+		return markdown.includes(embedLink) || markdown.includes(normalLink);
 	}
 
 	private buildFrontmatter(page: ConfluencePage): Record<string, string | number> {

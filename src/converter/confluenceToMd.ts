@@ -17,7 +17,8 @@ export function confluenceToMarkdown(
 		.replace(/\b(ac|ri):([A-Za-z0-9_-]+)=/g, "$1-$2=");
 
 	const withCodeMacros = replaceCodeMacros(sanitized);
-	const withAttachmentMacros = replaceAttachmentMacros(withCodeMacros, attachmentFolder);
+	const withImageMacros = replaceImageMacros(withCodeMacros, attachmentFolder);
+	const withAttachmentMacros = replaceAttachmentMacros(withImageMacros, attachmentFolder);
 	const turndown = createTurndownService(baseUrl, attachmentFolder);
 	const markdown = turndown.turndown(withAttachmentMacros);
 
@@ -178,6 +179,42 @@ function createTurndownService(baseUrl: string, attachmentFolder?: string): Turn
 			}
 
 			return `![${alt}]()`;
+		},
+	});
+
+	// --- Raw img tags that point at Confluence attachment downloads ---
+	td.addRule("confluenceDownloadImage", {
+		filter(node: TNode): boolean {
+			if (!isTag(node, "img")) return false;
+			const src = (node as HTMLElement).getAttribute("src") || "";
+			return src.includes("/download/attachments/");
+		},
+		replacement(_content: string, node: TNode): string {
+			const el = node as HTMLElement;
+			const src = el.getAttribute("src") || "";
+			const filename = getAttachmentFilenameFromUrl(src);
+			if (!filename) {
+				const alt = el.getAttribute("alt") || "";
+				return `![${alt}](${src})`;
+			}
+			return formatAttachmentWikilink(filename, attachmentFolder, true);
+		},
+	});
+
+	// --- Raw links that point at Confluence attachment downloads ---
+	td.addRule("confluenceDownloadLink", {
+		filter(node: TNode): boolean {
+			if (!isTag(node, "a")) return false;
+			const href = (node as HTMLElement).getAttribute("href") || "";
+			return href.includes("/download/attachments/");
+		},
+		replacement(content: string, node: TNode): string {
+			const href = (node as HTMLElement).getAttribute("href") || "";
+			const filename = getAttachmentFilenameFromUrl(href);
+			if (!filename) {
+				return content ? `[${content}](${href})` : href;
+			}
+			return formatAttachmentWikilink(filename, attachmentFolder, false);
 		},
 	});
 
@@ -361,6 +398,33 @@ function replaceAttachmentMacros(html: string, attachmentFolder?: string): strin
 	);
 }
 
+function replaceImageMacros(html: string, attachmentFolder?: string): string {
+	return html.replace(
+		/<ac-image\b[^>]*>[\s\S]*?<\/ac-image>/g,
+		(imageMacro) => {
+			const attachmentTag = imageMacro.match(/<ri-attachment\b[^>]*>/i)?.[0];
+			if (attachmentTag) {
+				const filename = getHtmlAttribute(attachmentTag, "ri-filename") || "";
+				if (filename) {
+					const link = formatAttachmentWikilink(filename, attachmentFolder, true);
+					return `<p data-confluence-attachment="${encodeURIComponent(link)}">attachment</p>`;
+				}
+			}
+
+			const urlTag = imageMacro.match(/<ri-url\b[^>]*>/i)?.[0];
+			if (urlTag) {
+				const url = getHtmlAttribute(urlTag, "ri-value") || "";
+				if (url) {
+					const alt = getHtmlAttribute(imageMacro, "ac-alt") || "";
+					return `<p>![${alt}](${url})</p>`;
+				}
+			}
+
+			return imageMacro;
+		},
+	);
+}
+
 function getMacroParameter(macro: string, parameterName: string): string | null {
 	const escapedName = parameterName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 	const match = macro.match(new RegExp(
@@ -390,6 +454,18 @@ function getHtmlAttribute(html: string, attributeName: string): string | null {
 	const escapedName = attributeName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 	const match = html.match(new RegExp(`\\b${escapedName}\\s*=\\s*(['"])(.*?)\\1`, "i"));
 	return match ? decodeBasicHtmlEntities(match[2]) : null;
+}
+
+function getAttachmentFilenameFromUrl(rawUrl: string): string | null {
+	try {
+		const url = rawUrl.startsWith("http")
+			? new URL(rawUrl)
+			: new URL(rawUrl, "https://placeholder.local");
+		const match = url.pathname.match(/(?:\/wiki)?\/download\/attachments\/[^/]+\/([^/]+)/);
+		return match ? decodeURIComponent(match[1]) : null;
+	} catch {
+		return null;
+	}
 }
 
 function stripTags(value: string): string {
