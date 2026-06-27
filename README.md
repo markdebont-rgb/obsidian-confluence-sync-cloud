@@ -90,6 +90,29 @@ npm run build    # production build
 npm run typecheck # TypeScript check
 ```
 
+## Manual install / debugging
+
+Obsidian needs these files in the plugin folder:
+
+```text
+<vault>/.obsidian/plugins/confluence-reader/
+  manifest.json
+  main.js
+  styles.css
+```
+
+If the plugin does not install or does not appear in Obsidian:
+
+1. Run `npm install`.
+2. Run `npm run build`.
+3. Confirm `main.js` exists next to `manifest.json`.
+4. Copy `manifest.json`, `main.js`, and `styles.css` into `.obsidian/plugins/confluence-reader/`.
+5. Restart Obsidian or reload plugins.
+6. Open **Settings → Community plugins** and enable **Confluence Reader**.
+7. If it still fails, open **Developer Tools → Console** in Obsidian and check for errors mentioning `confluence-reader`.
+
+For BRAT installs, the repository or release must include the built `main.js`; source files alone are not enough for Obsidian to load the plugin.
+
 ## Compatibility
 
 - Confluence **Cloud** and **Server / Data Center** (REST API v1)
